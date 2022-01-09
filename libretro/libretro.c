@@ -1025,7 +1025,7 @@ bool retro_load_game(const struct retro_game_info* info)
    if (selected_bios == auto_detect || selected_bios == official_bios)
    {
      bios_loaded = true;
-     strcat(filename_bios, "/gba_bios.bin");
+     strcat(filename_bios, "/gbx/gba_bios.bin");
 
      if (load_bios(filename_bios) != 0)
      {

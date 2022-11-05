@@ -116,36 +116,23 @@ u32 arm_to_mips_reg[] =
   mips_emit_addu(ireg, arm_to_mips_reg[reg_index], reg_zero)                  \
 
 #define generate_load_imm(ireg, imm)                                          \
-  if(((s32)imm >= -32768) && ((s32)imm <= 32767))                             \
-  {                                                                           \
+  if(((s32)imm >= -32768) && ((s32)imm <= 32767)) {                           \
     mips_emit_addiu(ireg, reg_zero, imm);                                     \
-  }                                                                           \
-  else                                                                        \
-  {                                                                           \
-    if(((u32)imm >> 16) == 0x0000)                                            \
-    {                                                                         \
-      mips_emit_ori(ireg, reg_zero, imm);                                     \
-    }                                                                         \
-    else                                                                      \
-    {                                                                         \
-      mips_emit_lui(ireg, imm >> 16);                                         \
-                                                                              \
-      if(((u32)imm & 0x0000FFFF) != 0x00000000)                               \
-      {                                                                       \
-        mips_emit_ori(ireg, ireg, imm & 0xFFFF);                              \
-      }                                                                       \
+  } else if(((u32)imm >> 16) == 0x0000) {                                     \
+    mips_emit_ori(ireg, reg_zero, imm);                                       \
+  } else {                                                                    \
+    mips_emit_lui(ireg, imm >> 16);                                           \
+    if (((u32)(imm) & 0x0000FFFF)) {                                          \
+      mips_emit_ori(ireg, ireg, (imm) & 0xFFFF);                              \
     }                                                                         \
   }                                                                           \
 
 #define generate_load_pc(ireg, new_pc)                                        \
 {                                                                             \
   s32 pc_delta = (new_pc) - (stored_pc);                                      \
-  if((pc_delta >= -32768) && (pc_delta <= 32767))                             \
-  {                                                                           \
+  if((pc_delta >= -32768) && (pc_delta <= 32767)) {                           \
     mips_emit_addiu(ireg, reg_pc, pc_delta);                                  \
-  }                                                                           \
-  else                                                                        \
-  {                                                                           \
+  } else {                                                                    \
     generate_load_imm(ireg, (new_pc));                                        \
   }                                                                           \
 }                                                                             \
@@ -244,6 +231,7 @@ u32 arm_to_mips_reg[] =
   if(pc == idle_loop_target_pc)                                               \
   {                                                                           \
     generate_load_pc(reg_a0, new_pc);                                         \
+    mips_emit_lui(reg_cycles, 0);                                             \
     generate_function_call_swap_delay(mips_update_gba);                       \
     mips_emit_j_filler(writeback_location);                                   \
     mips_emit_nop();                                                          \
@@ -272,25 +260,21 @@ u32 arm_to_mips_reg[] =
   mips_emit_j(mips_absolute_offset(mips_indirect_branch_##type));             \
   mips_emit_nop()                                                             \
 
+#define block_prologue_size   16
+
 #define generate_block_prologue()                                             \
   update_trampoline = translation_ptr;                                        \
   mips_emit_j(mips_absolute_offset(mips_update_gba));                         \
   mips_emit_nop();                                                            \
+  spaccess_trampoline = translation_ptr;                                      \
+  mips_emit_j(mips_absolute_offset(&rom_translation_cache[EWRAM_SPM_OFF]));   \
+  mips_emit_nop();                                                            \
   generate_load_imm(reg_pc, stored_pc)                                        \
 
-#define block_prologue_size 8
-
-#define check_generate_n_flag                                                 \
-  (flag_status & 0x08)                                                        \
-
-#define check_generate_z_flag                                                 \
-  (flag_status & 0x04)                                                        \
-
-#define check_generate_c_flag                                                 \
-  (flag_status & 0x02)                                                        \
-
-#define check_generate_v_flag                                                 \
-  (flag_status & 0x01)                                                        \
+#define check_generate_n_flag (flag_status & 0x08)
+#define check_generate_z_flag (flag_status & 0x04)
+#define check_generate_c_flag (flag_status & 0x02)
+#define check_generate_v_flag (flag_status & 0x01)
 
 #define generate_load_reg_pc(ireg, reg_index, pc_offset)                      \
   if(reg_index == REG_PC)                                                     \
@@ -519,57 +503,42 @@ u32 generate_load_rm_sh_##flags_op(u32 rm)                                    \
 {                                                                             \
   switch((opcode >> 4) & 0x07)                                                \
   {                                                                           \
-    /* LSL imm */                                                             \
-    case 0x0:                                                                 \
+    case 0x0: /* LSL imm */                                                   \
     {                                                                         \
       generate_shift_imm(arm_reg_a0, lsl, flags_op);                          \
       break;                                                                  \
     }                                                                         \
-                                                                              \
-    /* LSL reg */                                                             \
-    case 0x1:                                                                 \
+    case 0x1: /* LSL reg */                                                   \
     {                                                                         \
       generate_shift_reg(arm_reg_a0, lsl, flags_op);                          \
       break;                                                                  \
     }                                                                         \
-                                                                              \
-    /* LSR imm */                                                             \
-    case 0x2:                                                                 \
+    case 0x2: /* LSR imm */                                                   \
     {                                                                         \
       generate_shift_imm(arm_reg_a0, lsr, flags_op);                          \
       break;                                                                  \
     }                                                                         \
-                                                                              \
-    /* LSR reg */                                                             \
-    case 0x3:                                                                 \
+    case 0x3: /* LSR reg */                                                   \
     {                                                                         \
       generate_shift_reg(arm_reg_a0, lsr, flags_op);                          \
       break;                                                                  \
     }                                                                         \
-                                                                              \
-    /* ASR imm */                                                             \
-    case 0x4:                                                                 \
+    case 0x4: /* ASR imm */                                                   \
     {                                                                         \
       generate_shift_imm(arm_reg_a0, asr, flags_op);                          \
       break;                                                                  \
     }                                                                         \
-                                                                              \
-    /* ASR reg */                                                             \
-    case 0x5:                                                                 \
+    case 0x5: /* ASR reg */                                                   \
     {                                                                         \
       generate_shift_reg(arm_reg_a0, asr, flags_op);                          \
       break;                                                                  \
     }                                                                         \
-                                                                              \
-    /* ROR imm */                                                             \
-    case 0x6:                                                                 \
+    case 0x6: /* ROR imm */                                                   \
     {                                                                         \
       generate_shift_imm(arm_reg_a0, ror, flags_op);                          \
       break;                                                                  \
     }                                                                         \
-                                                                              \
-    /* ROR reg */                                                             \
-    case 0x7:                                                                 \
+    case 0x7: /* ROR reg */                                                   \
     {                                                                         \
       generate_shift_reg(arm_reg_a0, ror, flags_op);                          \
       break;                                                                  \
@@ -581,7 +550,8 @@ u32 generate_load_rm_sh_##flags_op(u32 rm)                                    \
 
 #define generate_block_extra_vars()                                           \
   u32 stored_pc = pc;                                                         \
-  u8 *update_trampoline                                                       \
+  u8 *update_trampoline;                                                      \
+  u8 *spaccess_trampoline;                                                    \
 
 #define generate_block_extra_vars_arm()                                       \
   generate_block_extra_vars();                                                \
@@ -592,35 +562,27 @@ u32 generate_load_rm_sh_##flags_op(u32 rm)                                    \
   {                                                                           \
     switch((opcode >> 5) & 0x03)                                              \
     {                                                                         \
-      /* LSL imm */                                                           \
-      case 0x0:                                                               \
+      case 0x0: /* LSL imm */                                                 \
       {                                                                       \
         generate_shift_imm(arm_reg_a1, lsl, no_flags);                        \
         break;                                                                \
       }                                                                       \
-                                                                              \
-      /* LSR imm */                                                           \
-      case 0x1:                                                               \
+      case 0x1: /* LSR imm */                                                 \
       {                                                                       \
         generate_shift_imm(arm_reg_a1, lsr, no_flags);                        \
         break;                                                                \
       }                                                                       \
-                                                                              \
-      /* ASR imm */                                                           \
-      case 0x2:                                                               \
+      case 0x2: /* ASR imm */                                                 \
       {                                                                       \
         generate_shift_imm(arm_reg_a1, asr, no_flags);                        \
         break;                                                                \
       }                                                                       \
-                                                                              \
-      /* ROR imm */                                                           \
-      case 0x3:                                                               \
+      case 0x3: /* ROR imm */                                                 \
       {                                                                       \
         generate_shift_imm(arm_reg_a1, ror, no_flags);                        \
         break;                                                                \
       }                                                                       \
     }                                                                         \
-                                                                              \
     return rm;                                                                \
   }                                                                           \
 
@@ -746,66 +708,21 @@ u32 execute_spsr_restore_body(u32 address)
 #define generate_condition()                                                  \
   switch(condition)                                                           \
   {                                                                           \
-    case 0x0:                                                                 \
-      generate_condition_eq();                                                \
-      break;                                                                  \
-                                                                              \
-    case 0x1:                                                                 \
-      generate_condition_ne();                                                \
-      break;                                                                  \
-                                                                              \
-    case 0x2:                                                                 \
-      generate_condition_cs();                                                \
-      break;                                                                  \
-                                                                              \
-    case 0x3:                                                                 \
-      generate_condition_cc();                                                \
-      break;                                                                  \
-                                                                              \
-    case 0x4:                                                                 \
-      generate_condition_mi();                                                \
-      break;                                                                  \
-                                                                              \
-    case 0x5:                                                                 \
-      generate_condition_pl();                                                \
-      break;                                                                  \
-                                                                              \
-    case 0x6:                                                                 \
-      generate_condition_vs();                                                \
-      break;                                                                  \
-                                                                              \
-    case 0x7:                                                                 \
-      generate_condition_vc();                                                \
-      break;                                                                  \
-                                                                              \
-    case 0x8:                                                                 \
-      generate_condition_hi();                                                \
-      break;                                                                  \
-                                                                              \
-    case 0x9:                                                                 \
-      generate_condition_ls();                                                \
-      break;                                                                  \
-                                                                              \
-    case 0xA:                                                                 \
-      generate_condition_ge();                                                \
-      break;                                                                  \
-                                                                              \
-    case 0xB:                                                                 \
-      generate_condition_lt();                                                \
-      break;                                                                  \
-                                                                              \
-    case 0xC:                                                                 \
-      generate_condition_gt();                                                \
-      break;                                                                  \
-                                                                              \
-    case 0xD:                                                                 \
-      generate_condition_le();                                                \
-      break;                                                                  \
-                                                                              \
-    case 0xE:                                                                 \
-      break;                                                                  \
-                                                                              \
-    case 0xF:                                                                 \
+    case 0x0: generate_condition_eq(); break;                                 \
+    case 0x1: generate_condition_ne(); break;                                 \
+    case 0x2: generate_condition_cs(); break;                                 \
+    case 0x3: generate_condition_cc(); break;                                 \
+    case 0x4: generate_condition_mi(); break;                                 \
+    case 0x5: generate_condition_pl(); break;                                 \
+    case 0x6: generate_condition_vs(); break;                                 \
+    case 0x7: generate_condition_vc(); break;                                 \
+    case 0x8: generate_condition_hi(); break;                                 \
+    case 0x9: generate_condition_ls(); break;                                 \
+    case 0xA: generate_condition_ge(); break;                                 \
+    case 0xB: generate_condition_lt(); break;                                 \
+    case 0xC: generate_condition_gt(); break;                                 \
+    case 0xD: generate_condition_le(); break;                                 \
+    default:                                                                  \
       break;                                                                  \
   }                                                                           \
 
@@ -933,50 +850,6 @@ u32 execute_spsr_restore_body(u32 address)
     mips_emit_sltiu(reg_z_cache, _rd, 1);                                     \
   }                                                                           \
 
-#define generate_op_sub_flags_prologue(_rn, _rm)                              \
-  if(check_generate_c_flag)                                                   \
-  {                                                                           \
-    mips_emit_sltu(reg_c_cache, _rn, _rm);                                    \
-    mips_emit_xori(reg_c_cache, reg_c_cache, 1);                              \
-  }                                                                           \
-  if(check_generate_v_flag)                                                   \
-  {                                                                           \
-    mips_emit_slt(reg_v_cache, _rn, _rm);                                     \
-  }                                                                           \
-
-#define generate_op_sub_flags_epilogue(_rd)                                   \
-  generate_op_logic_flags(_rd);                                               \
-  if(check_generate_v_flag)                                                   \
-  {                                                                           \
-    if(!check_generate_n_flag)                                                \
-    {                                                                         \
-      mips_emit_srl(reg_n_cache, _rd, 31);                                    \
-    }                                                                         \
-    mips_emit_xor(reg_v_cache, reg_v_cache, reg_n_cache);                     \
-  }                                                                           \
-
-#define generate_add_flags_prologue(_rn, _rm)                                 \
-  if(check_generate_c_flag | check_generate_v_flag)                           \
-  {                                                                           \
-    mips_emit_addu(reg_c_cache, _rn, reg_zero);                               \
-  }                                                                           \
-  if(check_generate_v_flag)                                                   \
-  {                                                                           \
-    mips_emit_slt(reg_v_cache, _rm, reg_zero);                                \
-  }                                                                           \
-
-#define generate_add_flags_epilogue(_rd)                                      \
-  if(check_generate_v_flag)                                                   \
-  {                                                                           \
-    mips_emit_slt(reg_a0, _rd, reg_c_cache);                                  \
-    mips_emit_xor(reg_v_cache, reg_v_cache, reg_a0);                          \
-  }                                                                           \
-  if(check_generate_c_flag)                                                   \
-  {                                                                           \
-    mips_emit_sltu(reg_c_cache, _rd, reg_c_cache);                            \
-  }                                                                           \
-  generate_op_logic_flags(_rd)                                                \
-
 #define generate_op_ands_reg(_rd, _rn, _rm)                                   \
   mips_emit_and(_rd, _rn, _rm);                                               \
   generate_op_logic_flags(_rd)                                                \
@@ -995,39 +868,102 @@ u32 execute_spsr_restore_body(u32 address)
   generate_op_logic_flags(_rd)                                                \
 
 #define generate_op_subs_reg(_rd, _rn, _rm)                                   \
-  generate_op_sub_flags_prologue(_rn, _rm);                                   \
+  if(check_generate_c_flag)                                                   \
+  {                                                                           \
+    mips_emit_sltu(reg_c_cache, _rn, _rm);                                    \
+    mips_emit_xori(reg_c_cache, reg_c_cache, 1);                              \
+  }                                                                           \
+  if(check_generate_v_flag)                                                   \
+  {                                                                           \
+    mips_emit_slt(reg_v_cache, _rn, _rm);                                     \
+  }                                                                           \
   mips_emit_subu(_rd, _rn, _rm);                                              \
-  generate_op_sub_flags_epilogue(_rd)                                         \
+  generate_op_logic_flags(_rd);                                               \
+  if(check_generate_v_flag)                                                   \
+  {                                                                           \
+    if(!check_generate_n_flag)                                                \
+    {                                                                         \
+      mips_emit_srl(reg_n_cache, _rd, 31);                                    \
+    }                                                                         \
+    mips_emit_xor(reg_v_cache, reg_v_cache, reg_n_cache);                     \
+  }                                                                           \
 
 #define generate_op_rsbs_reg(_rd, _rn, _rm)                                   \
-  generate_op_sub_flags_prologue(_rm, _rn);                                   \
-  mips_emit_subu(_rd, _rm, _rn);                                              \
-  generate_op_sub_flags_epilogue(_rd)                                         \
+  generate_op_subs_reg(_rd, _rm, _rn)
 
 #define generate_op_sbcs_reg(_rd, _rn, _rm)                                   \
-  mips_emit_subu(_rd, _rn, _rm);                                              \
   mips_emit_xori(reg_temp, reg_c_cache, 1);                                   \
-  generate_op_sub_flags_prologue(_rd, reg_temp);                              \
+  if(check_generate_c_flag)                                                   \
+  {                                                                           \
+    mips_emit_sltu(reg_c_cache, _rm, _rn);                                    \
+    mips_emit_sltu(reg_rv, _rn, _rm);                                         \
+    mips_emit_xori(reg_rv, reg_rv, 1);                                        \
+    mips_emit_movz(reg_c_cache, reg_rv, reg_temp);                            \
+  }                                                                           \
+  if(check_generate_v_flag)                                                   \
+  {                                                                           \
+    mips_emit_xor(reg_v_cache, _rn, _rm);                                     \
+    mips_emit_nor(reg_rv, _rm, reg_zero);                                     \
+  }                                                                           \
+  mips_emit_subu(_rd, _rn, _rm);                                              \
   mips_emit_subu(_rd, _rd, reg_temp);                                         \
-  generate_op_sub_flags_epilogue(_rd)                                         \
+  if(check_generate_v_flag)                                                   \
+  {                                                                           \
+    mips_emit_xor(reg_rv, reg_rv, _rd);                                       \
+    mips_emit_and(reg_v_cache, reg_v_cache, reg_rv);                          \
+    mips_emit_srl(reg_v_cache, reg_v_cache, 31);                              \
+  }                                                                           \
+  generate_op_logic_flags(_rd);                                               \
 
 #define generate_op_rscs_reg(_rd, _rn, _rm)                                   \
-  mips_emit_addu(reg_temp, _rm, reg_c_cache);                                 \
-  mips_emit_addiu(reg_temp, reg_temp, -1);                                    \
-  generate_op_sub_flags_prologue(reg_temp, _rn);                              \
-  mips_emit_subu(_rd, reg_temp, _rn);                                         \
-  generate_op_sub_flags_epilogue(_rd)                                         \
+  generate_op_sbcs_reg(_rd, _rm, _rn)
 
 #define generate_op_adds_reg(_rd, _rn, _rm)                                   \
-  generate_add_flags_prologue(_rn, _rm);                                      \
+  if(check_generate_c_flag | check_generate_v_flag)                           \
+  {                                                                           \
+    mips_emit_addu(reg_c_cache, _rn, reg_zero);                               \
+  }                                                                           \
+  if(check_generate_v_flag)                                                   \
+  {                                                                           \
+    mips_emit_slt(reg_v_cache, _rm, reg_zero);                                \
+  }                                                                           \
   mips_emit_addu(_rd, _rn, _rm);                                              \
-  generate_add_flags_epilogue(_rd)                                            \
+  if(check_generate_v_flag)                                                   \
+  {                                                                           \
+    mips_emit_slt(reg_a0, _rd, reg_c_cache);                                  \
+    mips_emit_xor(reg_v_cache, reg_v_cache, reg_a0);                          \
+  }                                                                           \
+  if(check_generate_c_flag)                                                   \
+  {                                                                           \
+    mips_emit_sltu(reg_c_cache, _rd, reg_c_cache);                            \
+  }                                                                           \
+  generate_op_logic_flags(_rd)                                                \
 
 #define generate_op_adcs_reg(_rd, _rn, _rm)                                   \
-  mips_emit_addu(reg_temp, _rm, reg_c_cache);                                 \
-  generate_add_flags_prologue(_rn, _rm);                                      \
-  mips_emit_addu(_rd, _rn, reg_temp);                                         \
-  generate_add_flags_epilogue(_rd)                                            \
+  if(check_generate_v_flag)                                                   \
+  {                                                                           \
+    mips_emit_xor(reg_v_cache, _rn, _rm);                                     \
+    mips_emit_nor(reg_v_cache, reg_v_cache, reg_zero);                        \
+    mips_emit_addu(reg_rv, _rn, reg_zero);                                    \
+  }                                                                           \
+  mips_emit_addu(reg_a2, _rn, _rm);                                           \
+  if(check_generate_c_flag)                                                   \
+  {                                                                           \
+    mips_emit_sltu(reg_temp, reg_a2, _rm);                                    \
+  }                                                                           \
+  mips_emit_addu(_rd, reg_a2, reg_c_cache);                                   \
+  if(check_generate_v_flag)                                                   \
+  {                                                                           \
+    mips_emit_xor(reg_rv, reg_rv, _rd);                                       \
+    mips_emit_and(reg_v_cache, reg_rv, reg_v_cache);                          \
+    mips_emit_srl(reg_v_cache, reg_v_cache, 31);                              \
+  }                                                                           \
+  if(check_generate_c_flag)                                                   \
+  {                                                                           \
+    mips_emit_sltu(reg_c_cache, _rd, reg_c_cache);                            \
+    mips_emit_or(reg_c_cache, reg_temp, reg_c_cache);                         \
+  }                                                                           \
+  generate_op_logic_flags(_rd)                                                \
 
 #define generate_op_movs_reg(_rd, _rn, _rm)                                   \
   mips_emit_addu(_rd, _rm, reg_zero);                                         \
@@ -1150,7 +1086,14 @@ u32 execute_spsr_restore_body(u32 address)
   generate_op_##name##_imm(arm_to_mips_reg[rd], arm_to_mips_reg[rn])          \
 
 #define arm_generate_op_imm_flags(name, load_op)                              \
-  arm_generate_op_imm(name, load_op)                                          \
+  arm_decode_data_proc_imm(opcode);                                           \
+  ror(imm, imm, imm_ror);                                                     \
+  if(check_generate_c_flag && (imm_ror != 0))                                 \
+  {  /* Generate carry flag from integer rotation */                          \
+     mips_emit_addiu(reg_c_cache, reg_zero, ((imm) >> 31));                   \
+  }                                                                           \
+  arm_op_check_##load_op();                                                   \
+  generate_op_##name##_imm(arm_to_mips_reg[rd], arm_to_mips_reg[rn])          \
 
 #define arm_data_proc(name, type, flags_op)                                   \
 {                                                                             \
@@ -1259,7 +1202,7 @@ u32 execute_store_cpsr_body(u32 _cpsr, u32 address)
 #define arm_access_memory_load(mem_type)                                      \
   cycle_count += 2;                                                           \
   mips_emit_jal(mips_absolute_offset(execute_load_##mem_type));               \
-  generate_load_pc(reg_a1, (pc + 8));                                         \
+  generate_load_pc(reg_a1, (pc));                                             \
   generate_store_reg(reg_rv, rd);                                             \
   check_store_reg_pc_no_flags(rd)                                             \
 
@@ -1430,11 +1373,19 @@ u32 execute_store_cpsr_body(u32 _cpsr, u32 address)
   arm_block_memory_offset_##offset_type();                                    \
   arm_block_memory_writeback_##access_type(writeback_type);                   \
                                                                               \
-  if((rn == REG_SP) && iwram_stack_optimize)                                  \
+  if(rn == REG_SP)                                                            \
   {                                                                           \
+    /* Assume IWRAM, the most common path by far */                           \
     mips_emit_andi(reg_a1, reg_a2, 0x7FFC);                                   \
-    generate_load_imm(reg_a0, ((u32)(iwram + 0x8000)));                       \
+    /* Check the 23rd bit to differenciate IW/EW RAMs */                      \
+    mips_emit_srl(reg_temp, reg_a2, 24);                                      \
+    mips_emit_sll(reg_temp, reg_temp, 31);                                    \
+    mips_emit_bgezal(reg_temp,                                                \
+                mips_relative_offset(translation_ptr, spaccess_trampoline));  \
+    /* Delay slot, will be overwritten anyway */                              \
+    mips_emit_lui(reg_a0, ((u32)(iwram + 0x8000 + 0x8000) >> 16));            \
     mips_emit_addu(reg_a1, reg_a1, reg_a0);                                   \
+    offset = (u32)(iwram + 0x8000) & 0xFFFF;                                  \
                                                                               \
     for(i = 0; i < 16; i++)                                                   \
     {                                                                         \
@@ -1624,7 +1575,7 @@ u32 execute_store_cpsr_body(u32 _cpsr, u32 address)
 #define thumb_access_memory_load(mem_type, reg_rd)                            \
   cycle_count += 2;                                                           \
   mips_emit_jal(mips_absolute_offset(execute_load_##mem_type));               \
-  generate_load_pc(reg_a1, (pc + 4));                                         \
+  generate_load_pc(reg_a1, (pc));                                             \
   generate_store_reg(reg_rv, reg_rd)                                          \
 
 #define thumb_access_memory_store(mem_type, reg_rd)                           \
@@ -1741,11 +1692,11 @@ u32 execute_store_cpsr_body(u32 _cpsr, u32 address)
 #define thumb_block_memory_sp_extra_down()                                    \
 
 #define thumb_block_memory_sp_extra_pop_pc()                                  \
-  mips_emit_lw(reg_a0, reg_a1, (bit_count[reg_list] * 4));                    \
+  mips_emit_lw(reg_a0, reg_a1, offset);                                       \
   generate_indirect_branch_cycle_update(thumb)                                \
 
 #define thumb_block_memory_sp_extra_push_lr()                                 \
-  mips_emit_sw(reg_r14, reg_a1, (bit_count[reg_list] * 4))                    \
+  mips_emit_sw(reg_r14, reg_a1, offset)                                       \
 
 #define thumb_block_memory(access_type, pre_op, post_op, base_reg)            \
 {                                                                             \
@@ -1756,11 +1707,19 @@ u32 execute_store_cpsr_body(u32 _cpsr, u32 address)
   thumb_block_address_preadjust_##pre_op(base_reg);                           \
   thumb_block_address_postadjust_##post_op(base_reg);                         \
                                                                               \
-  if((base_reg == REG_SP) && iwram_stack_optimize)                            \
+  if(base_reg == REG_SP)                                                      \
   {                                                                           \
+    /* Assume IWRAM, the most common path by far */                           \
     mips_emit_andi(reg_a1, reg_a2, 0x7FFC);                                   \
-    generate_load_imm(reg_a0, ((u32)(iwram + 0x8000)));                       \
+    /* Check the 23rd bit to differenciate IW/EW RAMs */                      \
+    mips_emit_srl(reg_temp, reg_a2, 24);                                      \
+    mips_emit_sll(reg_temp, reg_temp, 31);                                    \
+    mips_emit_bgezal(reg_temp,                                                \
+                mips_relative_offset(translation_ptr, spaccess_trampoline));  \
+    /* Delay slot, will be overwritten anyway */                              \
+    mips_emit_lui(reg_a0, ((u32)(iwram + 0x8000 + 0x8000) >> 16));            \
     mips_emit_addu(reg_a1, reg_a1, reg_a0);                                   \
+    offset = (u32)(iwram + 0x8000) & 0xFFFF;                                  \
                                                                               \
     for(i = 0; i < 8; i++)                                                    \
     {                                                                         \
@@ -1850,10 +1809,9 @@ u32 execute_store_cpsr_body(u32 _cpsr, u32 address)
 #define thumb_blh()                                                           \
 {                                                                             \
   thumb_decode_branch();                                                      \
-  generate_alu_imm(addiu, addu, reg_a0, reg_r14, (offset * 2));               \
+  mips_emit_addiu(reg_a0, reg_r14, (offset * 2));                             \
   generate_load_pc(reg_r14, ((pc + 2) | 0x01));                               \
-  generate_indirect_branch_cycle_update(dual);                                \
-  break;                                                                      \
+  generate_indirect_branch_cycle_update(thumb);                               \
 }                                                                             \
 
 #define thumb_bx()                                                            \
@@ -2109,6 +2067,7 @@ static void emit_mem_access_loadop(
 #endif
 
 #define SMC_WRITE_OFF    (10*16*4)   /* 10 handlers (16 insts) */
+#define EWRAM_SPM_OFF    (SMC_WRITE_OFF + 4*2)   /* Just a jmp + nop */
 
 // Describes a "plain" memory are, that is, an area that is just accessed
 // as normal memory (with some caveats tho).
@@ -2740,7 +2699,13 @@ void init_emitter() {
   // This is just a trampoline (for the SMC branches)
   mips_emit_j(((u32)&smc_write) >> 2);
   mips_emit_nop();
-  
+
+  // Special trampoline for SP-relative ldm/stm (to EWRAM)
+  generate_load_imm(reg_a1, 0x3FFFC);
+  mips_emit_and(reg_a1, reg_a1, reg_a2);
+  mips_emit_lui(reg_a0, ((u32)(ewram + 0x8000) >> 16));
+  generate_function_return_swap_delay();
+
   // Generate the openload handlers (for accesses to unmapped mem)
   emit_openload_stub(0, false, 0, &translation_ptr);  // ld u8
   emit_openload_stub(1, true,  0, &translation_ptr);  // ld s8

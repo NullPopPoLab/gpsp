@@ -314,20 +314,30 @@ u32 arm_disect_imm_32bit(u32 imm, u32 *stores, u32 *rotations)
   }
 }
 
-#define arm_load_imm_32bit(ireg, imm)                                         \
-{                                                                             \
-  u32 stores[4];                                                              \
-  u32 rotations[4];                                                           \
-  u32 store_count = arm_disect_imm_32bit(imm, stores, rotations);             \
-  u32 i;                                                                      \
-                                                                              \
-  ARM_MOV_REG_IMM(0, ireg, stores[0], rotations[0]);                          \
-                                                                              \
-  for(i = 1; i < store_count; i++)                                            \
+#if __ARM_ARCH >= 7
+  #define arm_load_imm_32bit(ireg, imm)                                       \
   {                                                                           \
-    ARM_ORR_REG_IMM(0, ireg, ireg, stores[i], rotations[i]);                  \
-  }                                                                           \
-}                                                                             \
+    ARM_MOVW(0, ireg, (imm));                                                 \
+    if ((imm) >> 16) {                                                        \
+      ARM_MOVT(0, ireg, ((imm) >> 16));                                       \
+    }                                                                         \
+  }
+#else
+  #define arm_load_imm_32bit(ireg, imm)                                       \
+  {                                                                           \
+    u32 stores[4];                                                            \
+    u32 rotations[4];                                                         \
+    u32 store_count = arm_disect_imm_32bit(imm, stores, rotations);           \
+    u32 i;                                                                    \
+                                                                              \
+    ARM_MOV_REG_IMM(0, ireg, stores[0], rotations[0]);                        \
+                                                                              \
+    for(i = 1; i < store_count; i++)                                          \
+    {                                                                         \
+      ARM_ORR_REG_IMM(0, ireg, ireg, stores[i], rotations[i]);                \
+    }                                                                         \
+  }
+#endif
 
 
 #define generate_load_pc(ireg, new_pc)                                        \
@@ -1131,7 +1141,7 @@ u32 execute_spsr_restore_body(u32 pc)
   ARM_MLA(0, _rd, _rm, _rs, _rn)                                              \
 
 #define arm_multiply_add_no_flags_yes()                                       \
-  ARM_MULS(0, reg_a0, reg_a0, reg_a1)                                         \
+  ARM_MULS(0, _rd, _rm, _rs)                                                  \
 
 #define arm_multiply_add_yes_flags_yes()                                      \
   u32 _rn = arm_prepare_load_reg(&translation_ptr, reg_a2, rn);               \
@@ -1177,7 +1187,7 @@ u32 execute_spsr_restore_body(u32 pc)
   arm_decode_multiply_long();                                                 \
   u32 _rm = arm_prepare_load_reg(&translation_ptr, reg_a2, rm);               \
   u32 _rs = arm_prepare_load_reg(&translation_ptr, reg_rs, rs);               \
-  u32 _rdlo = arm_prepare_store_reg(reg_a0, rdlo);                            \
+  u32 _rdlo = (rdlo == rdhi) ? reg_a0 : arm_prepare_store_reg(reg_a0, rdlo);  \
   u32 _rdhi = arm_prepare_store_reg(reg_a1, rdhi);                            \
   arm_multiply_long_add_##add_op(name);                                       \
   arm_multiply_long_op(flags, arm_multiply_long_name_##name);                 \
@@ -1360,7 +1370,7 @@ static void trace_instruction(u32 pc, u32 mode)
 #define arm_access_memory_load(mem_type)                                      \
   cycle_count += 2;                                                           \
   generate_load_call_##mem_type();                                            \
-  write32((pc + 8));                                                          \
+  write32(pc);                                                                \
   arm_generate_store_reg_pc_no_flags(reg_rv, rd)                              \
 
 #define arm_access_memory_store(mem_type)                                     \
@@ -1732,7 +1742,7 @@ static void trace_instruction(u32 pc, u32 mode)
 #define thumb_access_memory_load(mem_type, _rd)                               \
   cycle_count += 2;                                                           \
   generate_load_call_##mem_type();                                            \
-  write32((pc + 4));                                                          \
+  write32(pc);                                                                \
   thumb_generate_store_reg(reg_rv, _rd)                                       \
 
 #define thumb_access_memory_store(mem_type, _rd)                              \
@@ -1923,11 +1933,16 @@ static void trace_instruction(u32 pc, u32 mode)
 #define thumb_blh()                                                           \
 {                                                                             \
   thumb_decode_branch();                                                      \
+  u32 offlo = (offset * 2) & 0xFF;                                            \
+  u32 offhi = (offset * 2) >> 8;                                              \
   generate_update_pc(((pc + 2) | 0x01));                                      \
   thumb_generate_load_reg(reg_a1, REG_LR);                                    \
   thumb_generate_store_reg(reg_a0, REG_LR);                                   \
-  generate_add_reg_reg_imm(reg_a0, reg_a1, (offset * 2), 0);                  \
-  generate_indirect_branch_cycle_update(dual_thumb);                          \
+  generate_add_reg_reg_imm(reg_a0, reg_a1, offlo, 0);                         \
+  if (offhi) {                                                                \
+    generate_add_reg_reg_imm(reg_a0, reg_a0, offhi, arm_imm_lsl_to_rot(8));   \
+  }                                                                           \
+  generate_indirect_branch_cycle_update(thumb);                               \
 }                                                                             \
 
 #define thumb_bx()                                                            \

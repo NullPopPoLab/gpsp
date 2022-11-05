@@ -39,9 +39,9 @@ char save_path[512];
 
 void trigger_ext_event(void);
 
-static void update_timers(irq_type *irq_raised)
+static unsigned update_timers(irq_type *irq_raised, unsigned completed_cycles)
 {
-   unsigned i;
+   unsigned i, ret = 0;
    for (i = 0; i < 4; i++)
    {
       if(timer[i].status == TIMER_INACTIVE)
@@ -49,7 +49,7 @@ static void update_timers(irq_type *irq_raised)
 
       if(timer[i].status != TIMER_CASCADE)
       {
-         timer[i].count -= execute_cycles;
+         timer[i].count -= completed_cycles;
          /* io_registers accessors range: REG_TM0D, REG_TM1D, REG_TM2D, REG_TM3D */
          write_ioreg(REG_TM0D + (i * 2), -(timer[i].count > timer[i].prescale));
       }
@@ -70,14 +70,15 @@ static void update_timers(irq_type *irq_raised)
       if(i < 2)
       {
          if(timer[i].direct_sound_channels & 0x01)
-            sound_timer(timer[i].frequency_step, 0);
+            ret += sound_timer(timer[i].frequency_step, 0);
 
          if(timer[i].direct_sound_channels & 0x02)
-            sound_timer(timer[i].frequency_step, 1);
+            ret += sound_timer(timer[i].frequency_step, 1);
       }
 
       timer[i].count += (timer[i].reload << timer[i].prescale);
    }
+   return ret;
 }
 
 void init_main(void)
@@ -106,15 +107,21 @@ void init_main(void)
 #endif
 }
 
-u32 update_gba(void)
+u32 update_gba(int remaining_cycles)
 {
   irq_type irq_raised = IRQ_NONE;
+  int dma_cycles;
+  remaining_cycles = MAX(remaining_cycles, -64);
 
   do
   {
     unsigned i;
-    cpu_ticks += execute_cycles;
+    // Number of cycles we ask to run - cycles that we did not execute
+    // (remaining_cycles can be negative and should be close to zero)
+    unsigned completed_cycles = execute_cycles - remaining_cycles;
+    cpu_ticks += completed_cycles;
 
+    remaining_cycles = 0;
     reg[CHANGED_PC_STATUS] = 0;
     reg[COMPLETED_FRAME] = 0;
 
@@ -125,9 +132,10 @@ u32 update_gba(void)
       gbc_sound_update = 0;
     }
 
-    update_timers(&irq_raised);
+    // Timers can trigger DMA (usually sound) and consume cycles
+    dma_cycles = update_timers(&irq_raised, completed_cycles);
 
-    video_count -= execute_cycles;
+    video_count -= completed_cycles;
 
     if(video_count <= 0)
     {
@@ -152,7 +160,7 @@ u32 update_gba(void)
           for(i = 0; i < 4; i++)
           {
             if(dma[i].start_type == DMA_START_HBLANK)
-              dma_transfer(i);
+              dma_transfer(i, &dma_cycles);
           }
         }
 
@@ -183,7 +191,7 @@ u32 update_gba(void)
           for(i = 0; i < 4; i++)
           {
             if(dma[i].start_type == DMA_START_VBLANK)
-              dma_transfer(i);
+              dma_transfer(i, &dma_cycles);
           }
         }
         else
@@ -235,7 +243,7 @@ u32 update_gba(void)
     if(irq_raised)
       raise_interrupt(irq_raised);
 
-    execute_cycles = video_count;
+    execute_cycles = MAX(video_count, 0);
 
     for (i = 0; i < 4; i++)
     {
@@ -247,7 +255,11 @@ u32 update_gba(void)
     }
   } while(reg[CPU_HALT_STATE] != CPU_ACTIVE && !reg[COMPLETED_FRAME]);
 
-  return execute_cycles;
+  // We voluntarily limit this. It is not accurate but it would be much harder.
+  dma_cycles = MIN(64, dma_cycles);
+  dma_cycles = MIN(execute_cycles, dma_cycles);
+
+  return execute_cycles - dma_cycles;
 }
 
 void reset_gba(void)
@@ -258,17 +270,7 @@ void reset_gba(void)
   reset_sound();
 }
 
-u32 file_length(FILE *fp)
-{
-  u32 length;
-
-  fseek(fp, 0, SEEK_END);
-  length = ftell(fp);
-  fseek(fp, 0, SEEK_SET);
-
-  return length;
-}
-
+#ifdef TRACE_REGISTERS
 void print_regs(void)
 {
   printf("R0=%08x R1=%08x R2=%08x R3=%08x "
@@ -280,6 +282,7 @@ void print_regs(void)
          reg[8], reg[9], reg[10], reg[11],
          reg[12], reg[13], reg[14]);
 }
+#endif
 
 bool main_read_savestate(const u8 *src)
 {
@@ -288,7 +291,7 @@ bool main_read_savestate(const u8 *src)
   const u8 *p2 = bson_find_key(src, "timers");
   if (!p1 || !p2)
     return false;
-  execute_cycles = 123;
+
   if (!(bson_read_int32(p1, "cpu-ticks", &cpu_ticks) &&
          bson_read_int32(p1, "exec-cycles", &execute_cycles) &&
          bson_read_int32(p1, "video-count", (u32*)&video_count)))

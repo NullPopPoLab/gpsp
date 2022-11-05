@@ -504,22 +504,22 @@ void function_cc write_eeprom(u32 unused_address, u32 value)
 
 #define read_open8()                                                          \
   if(!(reg[REG_CPSR] & 0x20))                                                 \
-    value = read_memory8(reg[REG_PC] + 4 + (address & 0x03));                 \
+    value = read_memory8(reg[REG_PC] + 8 + (address & 0x03));                 \
   else                                                                        \
-    value = read_memory8(reg[REG_PC] + 2 + (address & 0x01))                  \
+    value = read_memory8(reg[REG_PC] + 4 + (address & 0x01))                  \
 
 #define read_open16()                                                         \
   if(!(reg[REG_CPSR] & 0x20))                                                 \
-    value = read_memory16(reg[REG_PC] + 4 + (address & 0x02));                \
+    value = read_memory16(reg[REG_PC] + 8 + (address & 0x02));                \
   else                                                                        \
-    value = read_memory16(reg[REG_PC] + 2)                                    \
+    value = read_memory16(reg[REG_PC] + 4)                                    \
 
 #define read_open32()                                                         \
   if(!(reg[REG_CPSR] & 0x20))                                                 \
-    value = read_memory32(reg[REG_PC] + 4);                                   \
+    value = read_memory32(reg[REG_PC] + 8);                                   \
   else                                                                        \
   {                                                                           \
-    u32 current_instruction = read_memory16(reg[REG_PC] + 2);                 \
+    u32 current_instruction = read_memory16(reg[REG_PC] + 4);                 \
     value = current_instruction | (current_instruction << 16);                \
   }                                                                           \
 
@@ -699,7 +699,7 @@ static cpu_alert_type trigger_dma(u32 dma_number, u32 value)
 
       write_dmareg(REG_DMA0CNT_H, dma_number, value);
       if(start_type == DMA_START_IMMEDIATELY)
-        return dma_transfer(dma_number);
+        return dma_transfer(dma_number, NULL);
     }
   }
   else
@@ -1346,6 +1346,7 @@ cpu_alert_type function_cc write_io_register16(u32 address, u32 value)
 
     // WAITCNT
     case 0x204:
+      write_ioreg(REG_WAITCNT, value);
       break;
 
     // Halt
@@ -2132,10 +2133,7 @@ typedef struct
    u32 flash_device_id;
    int save_type;
    int rtc_enabled;
-   int mirroring_enabled;
-   int use_bios;
    u32 idle_loop_target_pc;
-   u32 iwram_stack_optimize;
    u32 translation_gate_target_1;
    u32 translation_gate_target_2;
    u32 translation_gate_target_3;
@@ -2173,8 +2171,6 @@ static s32 load_game_config_over(gamepak_info_t *gpinfo)
      if (gbaover[i].idle_loop_target_pc != 0)
         idle_loop_target_pc = gbaover[i].idle_loop_target_pc;
 
-     iwram_stack_optimize = gbaover[i].iwram_stack_optimize;
-     
      flash_device_id      = gbaover[i].flash_device_id;
      if (flash_device_id == FLASH_DEVICE_MACRONIX_128KB)
        flash_bank_cnt = FLASH_SIZE_128KB;
@@ -2268,10 +2264,6 @@ static s32 load_game_config(gamepak_info_t *gpinfo)
                   translation_gate_targets++;
                }
             }
-
-            if(!strcmp(current_variable, "iwram_stack_optimize") &&
-                  !strcmp(current_value, "no\0")) /* \0 for broken toolchain workaround */
-               iwram_stack_optimize = 0;
 
             if(!strcmp(current_variable, "flash_rom_type") &&
               !strcmp(current_value, "128KB"))
@@ -2804,7 +2796,7 @@ static cpu_alert_type dma_transfer_copy(
   return CPU_ALERT_NONE;
 }
 
-cpu_alert_type dma_transfer(unsigned dma_chan)
+cpu_alert_type dma_transfer(unsigned dma_chan, int *usedcycles)
 {
   dma_transfer_type *dmach = &dma[dma_chan];
   u32 src_ptr = dmach->source_address & (
@@ -2861,6 +2853,12 @@ cpu_alert_type dma_transfer(unsigned dma_chan)
     raise_interrupt(IRQ_DMA0 << dma_chan);
     ret = CPU_ALERT_IRQ;
   }
+
+  // This is an approximation for the most common case (no region cross)
+  if (usedcycles)
+    *usedcycles += dmach->length * (
+       waitstate_cycles_sequential[src_ptr >> 24][tfsizes] +
+       waitstate_cycles_sequential[dst_ptr >> 24][tfsizes]);
 
   return ret;
 }
@@ -3248,7 +3246,6 @@ u32 load_gamepak(const struct retro_game_info* info, const char *name)
    memcpy(gpinfo.gamepak_maker, &gamepak_buffers[0][0xB0],  2);
 
    idle_loop_target_pc = 0xFFFFFFFF;
-   iwram_stack_optimize = 1;
    translation_gate_targets = 0;
    flash_device_id = FLASH_DEVICE_MACRONIX_64KB;
    flash_bank_cnt = FLASH_SIZE_64KB;

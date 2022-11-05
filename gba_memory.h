@@ -150,6 +150,7 @@ typedef enum
   REG_RCNT = 0x9A,
   REG_IE = 0x100,
   REG_IF = 0x101,
+  REG_WAITCNT = 0x102,
   REG_IME = 0x104,
   REG_HALTCNT = 0x180
 } hardware_register;
@@ -191,7 +192,7 @@ extern char gamepak_code[5];
 extern char gamepak_maker[3];
 extern char gamepak_filename[512];
 
-cpu_alert_type dma_transfer(unsigned dma_chan);
+cpu_alert_type dma_transfer(unsigned dma_chan, int *cycles);
 u8 *memory_region(u32 address, u32 *memory_limit);
 u32 load_gamepak(const struct retro_game_info* info, const char *name);
 u32 load_backup(char *name);

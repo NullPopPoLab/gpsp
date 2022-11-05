@@ -76,7 +76,7 @@ extern u32 flush_ram_count;
 extern char main_path[512];
 extern char save_path[512];
 
-u32 update_gba(void);
+u32 update_gba(int remaining_cycles);
 void reset_gba(void);
 
 void init_main(void);
@@ -85,14 +85,13 @@ void game_name_ext(char *src, char *buffer, char *extension);
 unsigned main_write_savestate(u8* ptr);
 bool main_read_savestate(const u8 *src);
 
-
-u32 file_length(FILE *fp);
-
 extern u32 num_skipped_frames;
 extern int dynarec_enable;
 extern boot_mode selected_boot_mode;
 
+#ifdef TRACE_REGISTERS
 void print_regs(void);
+#endif
 
 #endif
 

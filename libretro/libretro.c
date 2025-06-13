@@ -14,6 +14,8 @@
 #include "../gba_memory.h"
 #include "../gba_cc_lut.h"
 
+#define CUSTOM_VERSION "+NC41"
+
 #if defined(VITA) && defined(HAVE_DYNAREC)
 #include <psp2/kernel/sysmem.h>
 static int translation_caches_inited = 0;
@@ -512,9 +514,9 @@ void retro_get_system_info(struct retro_system_info* info)
 {
    info->library_name = GPSP_NAME;
  #ifdef GIT_VERSION
-   info->library_version = GPSP_VERSION "-" GIT_VERSION;
+   info->library_version = GPSP_VERSION "-" GIT_VERSION CUSTOM_VERSION;
  #else
-   info->library_version = GPSP_VERSION;
+   info->library_version = GPSP_VERSION CUSTOM_VERSION;
  #endif
    info->need_fullpath = true;
    info->block_extract = false;

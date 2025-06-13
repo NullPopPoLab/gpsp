@@ -75,7 +75,7 @@ u32 update_input(void)
 
    if (libretro_supports_bitmasks)
    {
-      int16_t ret = input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_MASK);
+      int32_t ret = input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_MASK);
 
       for (i = 0; i < sizeof(btn_map) / sizeof(map); i++)
          new_key |= (ret & (1 << btn_map[i].retropad)) ? btn_map[i].gba : 0;

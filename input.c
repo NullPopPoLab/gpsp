@@ -81,7 +81,7 @@ u32 update_input(void)
          new_key |= (ret & (1 << btn_map[i].retropad)) ? btn_map[i].gba : 0;
 
       libretro_ff_enabled = libretro_supports_ff_override &&
-            (ret & (1 << RETRO_DEVICE_ID_JOYPAD_R2));
+            (ret & (1 << RETRO_DEVICE_ID_JOYPAD_MENU));
 
       turbo_a = (ret & (1 << RETRO_DEVICE_ID_JOYPAD_X));
       turbo_b = (ret & (1 << RETRO_DEVICE_ID_JOYPAD_Y));

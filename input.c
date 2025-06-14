@@ -24,11 +24,6 @@ bool libretro_supports_ff_override = false;
 bool libretro_ff_enabled           = false;
 bool libretro_ff_enabled_prev      = false;
 
-unsigned turbo_period      = TURBO_PERIOD_MIN;
-unsigned turbo_pulse_width = TURBO_PULSE_WIDTH_MIN;
-unsigned turbo_a_counter   = 0;
-unsigned turbo_b_counter   = 0;
-
 static u32 old_key = 0;
 static retro_input_state_t input_state_cb;
 
@@ -67,8 +62,6 @@ u32 update_input(void)
 {
    unsigned i;
    uint32_t new_key = 0;
-   bool turbo_a     = false;
-   bool turbo_b     = false;
 
    if (!input_state_cb)
       return 0;
@@ -83,8 +76,9 @@ u32 update_input(void)
       libretro_ff_enabled = libretro_supports_ff_override &&
             (ret & (1 << RETRO_DEVICE_ID_JOYPAD_MENU));
 
-      turbo_a = (ret & (1 << RETRO_DEVICE_ID_JOYPAD_X));
-      turbo_b = (ret & (1 << RETRO_DEVICE_ID_JOYPAD_Y));
+		for(TurboWork* tw=&turboWork[0];tw<&turboWork[TURBO_BUTTONS];++tw){
+			tw->pressing=!!(ret & (1 << tw->srcbtn));
+		}
    }
    else
    {
@@ -92,36 +86,25 @@ u32 update_input(void)
          new_key |= input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, btn_map[i].retropad) ? btn_map[i].gba : 0;
 
        libretro_ff_enabled = libretro_supports_ff_override &&
-            input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R2);
+            input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_MENU);
 
-      turbo_a = input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_X);
-      turbo_b = input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_Y);
+		for(TurboWork* tw=&turboWork[0];tw<&turboWork[TURBO_BUTTONS];++tw){
+			tw->pressing=input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, tw->srcbtn);
+		}
    }
 
-   /* Handle turbo buttons */
-   if (turbo_a)
-   {
-      new_key |= (turbo_a_counter < turbo_pulse_width) ?
-            BUTTON_A : 0;
-
-      turbo_a_counter++;
-      if (turbo_a_counter >= turbo_period)
-         turbo_a_counter = 0;
-   }
-   else
-      turbo_a_counter = 0;
-
-   if (turbo_b)
-   {
-      new_key |= (turbo_b_counter < turbo_pulse_width) ?
-            BUTTON_B : 0;
-
-      turbo_b_counter++;
-      if (turbo_b_counter >= turbo_period)
-         turbo_b_counter = 0;
-   }
-   else
-      turbo_b_counter = 0;
+	for(TurboWork* tw=&turboWork[0];tw<&turboWork[TURBO_BUTTONS];++tw){
+		if(tw->pressing){
+			if(!tw->speed)new_key|=tw->btnflg;
+			else{
+				tw->counter-=tw->speed;
+				if((tw->counter&0xffff)>=turbo_ratio)new_key|=tw->btnflg;
+			}
+		}
+		else{
+			tw->counter=0;
+		}
+	}	
 
    // GBP keypad detection hack (only at game startup!)
    if (serial_mode == SERIAL_MODE_GBP) {

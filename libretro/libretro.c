@@ -109,6 +109,16 @@ static void (*video_post_process)(void) = NULL;
 static bool post_process_cc  = false;
 static bool post_process_mix = false;
 
+TurboWork turboWork[TURBO_BUTTONS]={
+	{false,BUTTON_A,0,0x2800,RETRO_DEVICE_ID_JOYPAD_A,RETRO_DEVICE_ID_JOYPAD_X,"gpsp_turbo_speed_a"},
+	{false,BUTTON_B,0,0x2800,RETRO_DEVICE_ID_JOYPAD_B,RETRO_DEVICE_ID_JOYPAD_Y,"gpsp_turbo_speed_b"},
+	{false,BUTTON_L,0,0x2800,RETRO_DEVICE_ID_JOYPAD_L,RETRO_DEVICE_ID_JOYPAD_L2,"gpsp_turbo_speed_l"},
+	{false,BUTTON_R,0,0x2800,RETRO_DEVICE_ID_JOYPAD_R,RETRO_DEVICE_ID_JOYPAD_R2,"gpsp_turbo_speed_r"},
+	{false,BUTTON_START,0,0x2800,RETRO_DEVICE_ID_JOYPAD_START,RETRO_DEVICE_ID_JOYPAD_G2,"gpsp_turbo_speed_start"},
+	{false,BUTTON_SELECT,0,0x2800,RETRO_DEVICE_ID_JOYPAD_SELECT,RETRO_DEVICE_ID_JOYPAD_G1,"gpsp_turbo_speed_select"},
+};
+unsigned turbo_ratio=0x8000;
+
 static void error_msg(const char* text)
 {
    if (log_cb)
@@ -983,27 +993,22 @@ static void check_variables(bool started_from_load)
        (post_process_mix != post_process_mix_prev))
       init_post_processing();
 
-   var.key           = "gpsp_turbo_period";
-   var.value         = NULL;
-   turbo_period      = TURBO_PERIOD_MIN;
-   turbo_pulse_width = TURBO_PULSE_WIDTH_MIN;
-   if (environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value)
-   {
-      turbo_period = atoi(var.value);
-      turbo_period = (turbo_period < TURBO_PERIOD_MIN) ?
-            TURBO_PERIOD_MIN : turbo_period;
-      turbo_period = (turbo_period > TURBO_PERIOD_MAX) ?
-            TURBO_PERIOD_MAX : turbo_period;
+	// turbo speed 
+	for(TurboWork* tw=&turboWork[0];tw<&turboWork[TURBO_BUTTONS];++tw){
+		var.key = tw->config;
+		if (environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value)
+		{
+			tw->speed=atoi(var.value)*0x800;
+		}
+		else tw->speed=0x2800;
+	}
 
-      turbo_pulse_width = turbo_period >> 1;
-      turbo_pulse_width = (turbo_pulse_width < TURBO_PULSE_WIDTH_MIN) ?
-            TURBO_PULSE_WIDTH_MIN : turbo_pulse_width;
-      turbo_pulse_width = (turbo_pulse_width > TURBO_PULSE_WIDTH_MAX) ?
-            TURBO_PULSE_WIDTH_MAX : turbo_pulse_width;
-
-      turbo_a_counter = 0;
-      turbo_b_counter = 0;
-   }
+	var.key = "gpsp_turbo_ratio";
+	if (environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value)
+	{
+		turbo_ratio=0x10000-(atoi(var.value)*0x1000)&0xffff;
+	}
+	else turbo_ratio=0x8000;
 }
 
 static void set_input_descriptors()
@@ -1013,14 +1018,18 @@ static void set_input_descriptors()
       { 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_UP,     "D-Pad Up" },
       { 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_DOWN,   "D-Pad Down" },
       { 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_RIGHT,  "D-Pad Right" },
-      { 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_B,      "B" },
       { 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_A,      "A" },
-      { 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_Y,      "Turbo B" },
+      { 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_B,      "B" },
       { 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_X,      "Turbo A" },
+      { 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_Y,      "Turbo B" },
       { 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_SELECT, "Select" },
       { 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_START,  "Start" },
       { 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L,      "L" },
       { 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R,      "R" },
+      { 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L2,     "Turbo L" },
+      { 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R2,     "Turbo R" },
+      { 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_G1,     "Turbo Select" },
+      { 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_G2,     "Turbo Start" },
       { 0 },
    };
 
@@ -1029,14 +1038,18 @@ static void set_input_descriptors()
       { 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_UP,     "D-Pad Up" },
       { 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_DOWN,   "D-Pad Down" },
       { 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_RIGHT,  "D-Pad Right" },
-      { 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_B,      "B" },
       { 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_A,      "A" },
-      { 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_Y,      "Turbo B" },
+      { 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_B,      "B" },
       { 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_X,      "Turbo A" },
+      { 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_Y,      "Turbo B" },
       { 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_SELECT, "Select" },
       { 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_START,  "Start" },
       { 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L,      "L" },
       { 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R,      "R" },
+      { 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L2,     "Turbo L" },
+      { 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R2,     "Turbo R" },
+      { 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_G1,     "Turbo Select" },
+      { 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_G2,     "Turbo Start" },
       { 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_MENU,   "Fast Forward" },
       { 0 },
    };
@@ -1144,11 +1157,6 @@ void retro_unload_game(void)
    libretro_supports_ff_override = false;
    libretro_ff_enabled           = false;
    libretro_ff_enabled_prev      = false;
-
-   turbo_period      = TURBO_PERIOD_MIN;
-   turbo_pulse_width = TURBO_PULSE_WIDTH_MIN;
-   turbo_a_counter   = 0;
-   turbo_b_counter   = 0;
 }
 
 unsigned retro_get_region(void)

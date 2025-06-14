@@ -56,6 +56,26 @@ static const map btn_map[] = {
    { RETRO_DEVICE_ID_JOYPAD_A,      BUTTON_A }
 };
 
+#define TURBO_A 0
+#define TURBO_B 1
+#define TURBO_L 2
+#define TURBO_R 3
+#define TURBO_START 4
+#define TURBO_SELECT 5
+#define TURBO_BUTTONS 6
+
+typedef struct TurboWork_{
+	bool pressing;
+	uint32_t btnflg;
+	uint32_t counter;
+	uint32_t speed;
+	uint32_t dstbtn;
+	uint32_t srcbtn;
+	const char* config;
+} TurboWork;
+extern TurboWork turboWork[TURBO_BUTTONS];
+extern unsigned turbo_ratio;
+
 extern bool libretro_supports_bitmasks;
 extern bool libretro_supports_ff_override;
 extern bool libretro_ff_enabled;
